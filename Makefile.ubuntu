@@ -6,7 +6,7 @@ PIDFILE := .server.pid
 SHELL := /bin/bash
 .SHELLFLAGS := -ec
 
-.PHONY: start stop restart status workload workload-schedule loadgen-workload kserve-schedule
+.PHONY: start stop restart status workload workload-schedule loadgen-workload kserve-schedule infer-curl
 
 start:
 	@if [ -f '$(PIDFILE)' ]; then \
@@ -75,3 +75,6 @@ loadgen-workload:
 KSERVE_URL ?= http://140.113.194.247:8080
 kserve-schedule:
 	uv run python custom/loadgen_workload.py --kserve --url $(KSERVE_URL) --schedule "0-5:3,5-10:10,10-15:20,15-25:40" --workload-log custom/workload_kserve_schedule.csv
+
+infer-curl:
+	curl -sS -X POST http://140.113.194.247:8080/v2/models/mnist/infer -H "Content-Type: application/json" -H "Host: mlflow-v2-wine-classifier-predictor.default.example.com" --data-binary @infer_v2.json

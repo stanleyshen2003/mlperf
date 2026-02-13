@@ -7,7 +7,7 @@ PIDFILE := .server.pid
 SHELL := powershell.exe
 .SHELLFLAGS := -NoProfile -Command
 
-.PHONY: start stop restart status workload workload-schedule loadgen-workload kserve-schedule
+.PHONY: start stop restart status workload workload-schedule loadgen-workload kserve-schedule infer-curl
 
 start:
 	@if (Test-Path '$(PIDFILE)') { $$p = (Get-Content '$(PIDFILE)' -Raw).Trim(); try { Get-Process -Id $$p -ErrorAction Stop | Out-Null; Write-Host 'Server already running (PID' $$p '). Use make stop first.'; exit 1 } catch {}; Remove-Item '$(PIDFILE)' -Force }; $$proc = Start-Process -FilePath 'uv' -ArgumentList 'run','python','run.py','--host','127.0.0.1','--port','$(PORT)' -WorkingDirectory 'fakeserver' -PassThru -NoNewWindow; $$proc.Id | Set-Content '$(PIDFILE)'; Write-Host 'Server started (PID' $$proc.Id '). http://127.0.0.1:$(PORT)'; Start-Sleep -Seconds 1; if (Test-Path '$(PIDFILE)') { $$p = (Get-Content '$(PIDFILE)' -Raw).Trim(); try { Get-Process -Id $$p -ErrorAction Stop | Out-Null; Write-Host 'Server running (PID' $$p '). Port $(PORT).'; try { (Invoke-WebRequest -Uri 'http://127.0.0.1:$(PORT)/health/' -UseBasicParsing -TimeoutSec 2).Content } catch {} } catch { Write-Host 'PID file exists but process not running.' } } else { Write-Host 'Server not running.' }
@@ -33,3 +33,6 @@ loadgen-workload:
 KSERVE_URL ?= http://140.113.194.247:8080
 kserve-schedule:
 	uv run python custom/loadgen_workload.py --kserve --url $(KSERVE_URL) --schedule "0-5:3,5-10:10,10-15:20,15-25:40" --workload-log custom/workload_kserve_schedule.csv
+
+infer-curl:
+	curl.exe -sS -X POST http://140.113.194.247:8080/v2/models/mnist/infer -H "Content-Type: application/json" -H "Host: mlflow-v2-wine-classifier-predictor.default.example.com" --data-binary @infer_v2.json

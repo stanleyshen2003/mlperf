@@ -100,14 +100,18 @@ def _send_one_kserve(
     model_name: str,
     payload: dict,
     timeout: float,
+    host_header: Optional[str] = None,
 ) -> bool:
     """Send one inference request to KServe v2 infer endpoint."""
     url = f"{base_url.rstrip('/')}/v2/models/{model_name}/infer"
+    headers = {"Content-Type": "application/json"}
+    if host_header:
+        headers["Host"] = host_header
     try:
         r = requests.post(
             url,
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             timeout=timeout,
         )
         return r.status_code == 200
@@ -168,6 +172,7 @@ def make_issue_query_kserve(
     model_name: str,
     payload: dict,
     timeout: float,
+    host_header: Optional[str] = None,
     workload_records: Optional[list] = None,
     workload_lock: Optional[threading.Lock] = None,
 ):
@@ -181,7 +186,7 @@ def make_issue_query_kserve(
             for sample_id, index in samples:
                 t_issued = time.time()
                 t0 = time.perf_counter()
-                ok = _send_one_kserve(base_url, model_name, payload, timeout)
+                ok = _send_one_kserve(base_url, model_name, payload, timeout, host_header=host_header)
                 t1 = time.perf_counter()
                 latency_ns = int((t1 - t0) * 1e9)
                 if workload_records is not None and workload_lock is not None:
@@ -230,6 +235,12 @@ def main():
         default=None,
         metavar="PATH",
         help="Path to JSON payload for KServe infer (default: infer_v2.json in repo root). Used only when --kserve.",
+    )
+    parser.add_argument(
+        "--kserve-host-header",
+        type=str,
+        default="mlflow-v2-wine-classifier-predictor.default.example.com",
+        help="Host header for KServe v2 infer requests (default: mlflow-v2-wine-classifier-predictor.default.example.com). Used only when --kserve.",
     )
     parser.add_argument(
         "--scenario",
@@ -382,6 +393,7 @@ def main():
             args.kserve_model,
             kserve_payload,
             args.timeout,
+            host_header=args.kserve_host_header,
             workload_records=workload_records if (args.workload_log or segments) else None,
             workload_lock=workload_lock if (args.workload_log or segments) else None,
         )
