@@ -1,0 +1,5 @@
+# uv / venv
+.venv/
+
+# Makefile server PID
+.server.pid

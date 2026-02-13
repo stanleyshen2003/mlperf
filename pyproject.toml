@@ -1,0 +1,11 @@
+[project]
+name = "mlperf-inference"
+version = "0.1.0"
+description = "MLPerf inference (fakeserver + custom workload use root .venv)"
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.0.0",
+    "requests>=2.28.0",
+    "mlcommons-loadgen>=6.0.0",
+    "matplotlib>=3.5.0",
+]
