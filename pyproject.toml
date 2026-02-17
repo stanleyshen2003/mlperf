@@ -9,3 +9,25 @@ dependencies = [
     "mlcommons-loadgen>=6.0.0",
     "matplotlib>=3.5.0",
 ]
+
+[project.optional-dependencies]
+yolo-serving = [
+    "mlc-scripts",
+    "ultralytics",
+    "opencv-python-headless",
+]
+bert-export = [
+    "optimum[onnx]",
+    "transformers",
+    "torch",
+    "onnx",
+    "onnxruntime>=1.16,<1.24",
+]
+sdxl-export = [
+    "optimum[onnxruntime]",
+    "diffusers",
+    "transformers",
+    "torch",
+    "onnx",
+    "onnxruntime>=1.16,<1.24",
+]

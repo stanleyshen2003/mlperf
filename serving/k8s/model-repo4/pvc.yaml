@@ -1,0 +1,16 @@
+# PersistentVolumeClaim for Triton model repository 4 (ResNet-50 ONNX).
+# Populate from local serving/model-repo4 (e.g. via upload pod or sync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: triton-model-repo4
+  labels:
+    app: triton-repo4
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  # Optional: specify storageClassName for your cluster (e.g. nfs, efs, csi)
+  # storageClassName: nfs-client

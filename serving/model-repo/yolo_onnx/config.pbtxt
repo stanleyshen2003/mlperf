@@ -1,0 +1,29 @@
+# Triton config for YOLOv11 ONNX (Ultralytics export).
+# max_batch_size 8: client may send batch 1..8 per request (shape [B, 3, 640, 640]).
+# dynamic_batching with preferred_batch_size: [1]: do not merge requests (each request runs as-is).
+# See: https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/model_configuration.html
+
+name: "yolo_onnx"
+platform: "onnxruntime_onnx"
+max_batch_size: 8
+
+dynamic_batching {
+  preferred_batch_size: [ 1 ]
+  max_queue_delay_microseconds: 0
+}
+
+input [
+  {
+    name: "images"
+    data_type: TYPE_FP32
+    format: FORMAT_NCHW
+    dims: [ 3, 640, 640 ]
+  }
+]
+output [
+  {
+    name: "output0"
+    data_type: TYPE_FP32
+    dims: [ 84, -1 ]
+  }
+]

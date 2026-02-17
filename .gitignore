@@ -7,3 +7,13 @@ generated/
 *.so
 .vscode/
 .venv/
+# YOLO download temp (serving uses uv from repo root)
+serving/.download/
+
+# Downloaded / generated model files
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.ckpt
+*.pb

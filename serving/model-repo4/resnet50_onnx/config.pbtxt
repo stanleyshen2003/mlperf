@@ -1,0 +1,28 @@
+# Triton config for ResNet-50 ONNX (torchvision export).
+# Model: ResNet-50 ImageNet classification (~25M params).
+# Input: input [batch, 3, 224, 224], output: output [batch, 1000].
+
+name: "resnet50_onnx"
+platform: "onnxruntime_onnx"
+max_batch_size: 32
+
+dynamic_batching {
+  preferred_batch_size: [ 1 ]
+  max_queue_delay_microseconds: 0
+}
+
+input [
+  {
+    name: "input"
+    data_type: TYPE_FP32
+    format: FORMAT_NCHW
+    dims: [ 3, 224, 224 ]
+  }
+]
+output [
+  {
+    name: "output"
+    data_type: TYPE_FP32
+    dims: [ 1000 ]
+  }
+]

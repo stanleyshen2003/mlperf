@@ -1,0 +1,21 @@
+[2026-02-15 13:40:22,163 script_utils.py:88 INFO] - * mlcr get-ml-model-yolov11,_mlc,_r2-downloader
+[2026-02-15 13:40:22,189 script_utils.py:88 INFO] -   * mlcr download-and-extract,_r2-downloader,_url.https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:40:22,207 script_utils.py:88 INFO] -     * mlcr download,file,_r2-downloader,_url.https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:40:22,218 script_utils.py:88 INFO] -       * mlcr detect,os
+[2026-02-15 13:40:22,232 module.py:4896 INFO] -              ! cd /home/stanley/MLC/repos/local/cache/detect-os_918392d3
+[2026-02-15 13:40:22,232 module.py:4897 INFO] -              ! call /home/stanley/MLC/repos/mlcommons@mlperf-automations/script/detect-os/run.sh from tmp-run.sh
+[2026-02-15 13:40:22,240 module.py:5041 INFO] -              ! call "postprocess" from /home/stanley/MLC/repos/mlcommons@mlperf-automations/script/detect-os/customize.py
+[2026-02-15 13:40:22,255 module.py:1843 INFO] -         - cache UID: 918392d3e544436d
+[2026-02-15 13:40:22,262 customize.py:78 INFO] - 
+[2026-02-15 13:40:22,262 customize.py:79 INFO] - Downloading from https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:40:22,262 module.py:4896 INFO] -            ! cd /home/stanley/mlperf/serving/.download
+[2026-02-15 13:40:22,262 module.py:4897 INFO] -            ! call /home/stanley/MLC/repos/mlcommons@mlperf-automations/script/download-file/run.sh from tmp-run.sh
+[2026-02-15 13:48:10,720 script_utils.py:88 INFO] - * mlcr get-ml-model-yolov11,_mlc,_r2-downloader
+[2026-02-15 13:48:10,737 script_utils.py:88 INFO] -   * mlcr download-and-extract,_r2-downloader,_url.https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:48:10,750 script_utils.py:88 INFO] -     * mlcr download,file,_r2-downloader,_url.https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:48:10,757 script_utils.py:88 INFO] -       * mlcr detect,os
+[2026-02-15 13:48:10,758 module.py:1018 INFO] -            ! load /home/stanley/MLC/repos/local/cache/detect-os_918392d3/mlc-cached-state.json
+[2026-02-15 13:48:10,765 customize.py:78 INFO] - 
+[2026-02-15 13:48:10,765 customize.py:79 INFO] - Downloading from https://yolo.mlcommons-storage.org/metadata/YOLO-model.uri
+[2026-02-15 13:48:10,765 module.py:4896 INFO] -            ! cd /home/stanley/mlperf/serving/.download
+[2026-02-15 13:48:10,765 module.py:4897 INFO] -            ! call /home/stanley/MLC/repos/mlcommons@mlperf-automations/script/download-file/run.sh from tmp-run.sh

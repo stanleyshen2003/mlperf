@@ -1,0 +1,2 @@
+batch_size,total_images,wall_sec,throughput_img_per_sec
+1,164,30.0,5.466666666666667

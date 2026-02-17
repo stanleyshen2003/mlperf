@@ -1,0 +1,16 @@
+# PersistentVolumeClaim for Triton model repository 2 (BERT ONNX).
+# Populate from local serving/model-repo2 (e.g. via upload pod or sync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: triton-model-repo2
+  labels:
+    app: triton-repo2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  # Optional: specify storageClassName for your cluster (e.g. nfs, efs, csi)
+  # storageClassName: nfs-client

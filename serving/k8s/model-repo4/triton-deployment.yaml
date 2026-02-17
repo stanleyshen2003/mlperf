@@ -1,0 +1,86 @@
+# Triton Inference Server deployment serving model-repo4 (ResNet-50 ONNX).
+# Mounts PVC triton-model-repo4 at /models. Ensure model-repo4 is uploaded before deploying.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-repo4
+  labels:
+    app: triton-repo4
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-repo4
+  template:
+    metadata:
+      labels:
+        app: triton-repo4
+        component: server
+    spec:
+      containers:
+        - name: triton
+          image: nvcr.io/nvidia/tritonserver:24.10-py3
+          args:
+            - tritonserver
+            - --model-repository=/models
+            - --strict-model-config=false
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: grpc
+              containerPort: 8001
+            - name: metrics
+              containerPort: 8002
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests:
+              memory: "2Gi"
+              # Uncomment for GPU; remove or set to "0" for CPU-only
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v2/health/live
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: triton-model-repo4
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: triton-repo4
+  labels:
+    app: triton-repo4
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+    - name: grpc
+      port: 8001
+      targetPort: 8001
+      protocol: TCP
+    - name: metrics
+      port: 8002
+      targetPort: 8002
+      protocol: TCP
+  selector:
+    app: triton-repo4

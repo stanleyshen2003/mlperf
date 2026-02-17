@@ -1,0 +1,16 @@
+# PersistentVolumeClaim for Triton model repository 3 (ViT ONNX, ~5GB).
+# Populate from local serving/model-repo3 (e.g. via upload-pod or sync).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: triton-model-repo3
+  labels:
+    app: triton-repo3
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Optional: specify storageClassName for your cluster (e.g. nfs, efs, csi)
+  # storageClassName: nfs-client

@@ -1,0 +1,28 @@
+# Triton config for ViT ONNX (Hugging Face Optimum export).
+# Model: ViT-G-style (~1.2B params, 3-8GB) or vit-huge; image classification.
+# Input: pixel_values [batch, 3, 224, 224], output: logits [batch, 1000].
+
+name: "vit_onnx"
+platform: "onnxruntime_onnx"
+max_batch_size: 32
+
+dynamic_batching {
+  preferred_batch_size: [ 1 ]
+  max_queue_delay_microseconds: 0
+}
+
+input [
+  {
+    name: "pixel_values"
+    data_type: TYPE_FP32
+    format: FORMAT_NCHW
+    dims: [ 3, 224, 224 ]
+  }
+]
+output [
+  {
+    name: "logits"
+    data_type: TYPE_FP32
+    dims: [ 1000 ]
+  }
+]

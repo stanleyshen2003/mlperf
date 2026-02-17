@@ -1,0 +1,16 @@
+# PersistentVolumeClaim for Triton model repository (YOLO ONNX model + config).
+# Populated by the download-model Job.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: triton-model-repo
+  labels:
+    app: triton-yolo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  # Optional: specify storageClassName for your cluster (e.g. nfs, efs, csi)
+  # storageClassName: nfs-client
