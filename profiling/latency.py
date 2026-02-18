@@ -4,12 +4,13 @@ Latency benchmark for Triton ONNX models (YOLO, ViT, ResNet, BERT).
 Sends batch requests from batch size 1 to 16, 100 times each, strictly sequential
 (all previous requests are processed before sending the next). Records average
 and std of request time in ms, and dumps all latency records to <base>_dump.csv.
+Uses Triton gRPC client (tritonclient.grpc) for lower latency than HTTP.
 
 Usage:
-  # Port-forward first, then from repo root:
-  kubectl port-forward svc/triton-yolo 8000:8000   # or svc for model-repo2 (BERT)
+  # Port-forward gRPC (Triton gRPC is typically on 8001), then from repo root:
+  kubectl port-forward svc/triton-yolo 8001:8001   # or svc for model-repo2 (BERT)
   uv run python profiling/latency.py
-  uv run python profiling/latency.py --model bert_onnx --url http://localhost:8000 --output profiling/result/bert_onnx_latency.csv
+  uv run python profiling/latency.py --model bert_onnx --url localhost:8001 --output profiling/result/bert_onnx_latency.csv
 """
 import argparse
 import csv
@@ -18,7 +19,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-import requests
+import tritonclient.grpc as grpcclient
 
 # Batch sizes to test
 BATCH_SIZES = list(range(1, 17))
@@ -37,41 +38,53 @@ MODEL_IO = {
 }
 
 
-def _build_payload(model: str, batch_size: int) -> tuple[dict, str]:
-    """Build inference payload for the given model and batch size. Returns (payload, output_name)."""
+def _parse_grpc_url(url: str) -> str:
+    """Return host:port for gRPC. If url is http(s)://host:8000, use port 8001 (Triton gRPC)."""
+    s = url.strip().rstrip("/")
+    if s.startswith("http://"):
+        s = s[7:]
+    elif s.startswith("https://"):
+        s = s[8:]
+    if ":" in s:
+        host, port = s.rsplit(":", 1)
+        if port == "8000":
+            return f"{host}:8001"
+        return f"{host}:{port}"
+    return f"{s}:8001"
+
+
+def _build_grpc_inputs(model: str, batch_size: int) -> tuple[list, list]:
+    """Build gRPC InferInput and InferRequestedOutput for the given model and batch size."""
     cfg = MODEL_IO[model]
     if isinstance(cfg, dict) and cfg.get("kind") == "bert":
         seq_len = cfg["seq_len"]
         output_name = cfg["output"]
         shape = [batch_size, seq_len]
-        # BERT: input_ids, attention_mask, token_type_ids (INT64). Use small token ids for input_ids.
         input_ids = np.random.randint(0, 30000, size=shape, dtype=np.int64)
         attention_mask = np.ones(shape, dtype=np.int64)
         token_type_ids = np.zeros(shape, dtype=np.int64)
-        payload = {
-            "inputs": [
-                {"name": "input_ids", "shape": shape, "datatype": "INT64", "data": input_ids.flatten().tolist()},
-                {"name": "attention_mask", "shape": shape, "datatype": "INT64", "data": attention_mask.flatten().tolist()},
-                {"name": "token_type_ids", "shape": shape, "datatype": "INT64", "data": token_type_ids.flatten().tolist()},
-            ],
-            "outputs": [{"name": output_name}],
-        }
-        return payload, output_name
+        inputs = [
+            grpcclient.InferInput("input_ids", shape, "INT64"),
+            grpcclient.InferInput("attention_mask", shape, "INT64"),
+            grpcclient.InferInput("token_type_ids", shape, "INT64"),
+        ]
+        inputs[0].set_data_from_numpy(input_ids)
+        inputs[1].set_data_from_numpy(attention_mask)
+        inputs[2].set_data_from_numpy(token_type_ids)
+        outputs = [grpcclient.InferRequestedOutput(output_name)]
+        return inputs, outputs
     # Vision: single FP32 input
     input_name, output_name, (c, h, w) = cfg
     shape = [batch_size, c, h, w]
     data = np.random.randn(*shape).astype(np.float32)
-    payload = {
-        "inputs": [
-            {"name": input_name, "shape": shape, "datatype": "FP32", "data": data.flatten().tolist()},
-        ],
-        "outputs": [{"name": output_name}],
-    }
-    return payload, output_name
+    inputs = [grpcclient.InferInput(input_name, shape, "FP32")]
+    inputs[0].set_data_from_numpy(data)
+    outputs = [grpcclient.InferRequestedOutput(output_name)]
+    return inputs, outputs
 
 
 def run_batch_requests(
-    base_url: str,
+    grpc_url: str,
     model: str,
     batch_size: int,
     num_requests: int,
@@ -84,17 +97,14 @@ def run_batch_requests(
     """
     if model not in MODEL_IO:
         raise ValueError(f"Unknown model {model!r}; supported: {list(MODEL_IO)}")
-    infer_url = f"{base_url}/v2/models/{model}/infer"
     times_ms = []
-
-    for _ in range(num_requests):
-        payload, _ = _build_payload(model, batch_size)
-        start = time.perf_counter()
-        r = requests.post(infer_url, json=payload, timeout=timeout)
-        r.raise_for_status()
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        times_ms.append(elapsed_ms)
-
+    with grpcclient.InferenceServerClient(url=grpc_url) as client:
+        for _ in range(num_requests):
+            inputs, outputs = _build_grpc_inputs(model, batch_size)
+            start = time.perf_counter()
+            client.infer(model_name=model, inputs=inputs, outputs=outputs, client_timeout=timeout)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            times_ms.append(elapsed_ms)
     return times_ms
 
 
@@ -102,8 +112,8 @@ def main():
     parser = argparse.ArgumentParser(description="Latency benchmark for Triton ONNX models (batch 1-16, sequential)")
     parser.add_argument(
         "--url",
-        default="http://localhost:8000",
-        help="Triton HTTP endpoint (default: http://localhost:8000)",
+        default="localhost:8001",
+        help="Triton gRPC endpoint host:port (default: localhost:8001). If you pass http://host:8000, port 8001 is used.",
     )
     parser.add_argument(
         "--model",
@@ -132,17 +142,17 @@ def main():
     if args.seed is not None:
         np.random.seed(args.seed)
 
-    base = args.url.rstrip("/")
+    grpc_url = _parse_grpc_url(args.url)
     out_path = Path(args.output) if args.output else RESULT_DIR / f"{args.model}_latency.csv"
     dump_path = out_path.parent / f"{out_path.stem}_dump.csv"
 
     try:
-        r = requests.get(f"{base}/v2/health/ready", timeout=5)
-        if r.status_code != 200:
-            print(f"Server not ready: {r.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except requests.RequestException as e:
-        print(f"Cannot reach Triton at {base}: {e}", file=sys.stderr)
+        with grpcclient.InferenceServerClient(url=grpc_url) as client:
+            if not client.is_server_ready():
+                print("Server not ready", file=sys.stderr)
+                sys.exit(1)
+    except Exception as e:
+        print(f"Cannot reach Triton at {grpc_url}: {e}", file=sys.stderr)
         sys.exit(1)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,9 +172,9 @@ def main():
         print(f"{batch_size:<12} ", end="", flush=True)
         try:
             times_ms = run_batch_requests(
-                base, args.model, batch_size, args.requests_per_batch
+                grpc_url, args.model, batch_size, args.requests_per_batch
             )
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"FAILED: {e}", file=sys.stderr)
             sys.exit(1)
 

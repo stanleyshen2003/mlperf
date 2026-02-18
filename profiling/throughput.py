@@ -3,11 +3,11 @@
 Throughput (saturation) benchmark for Triton ONNX (YOLO, ViT, ResNet, BERT).
 For each batch size 1–16, runs for a fixed duration with multiple workers and
 capped in-flight samples. Records throughput (samples/sec). Results under profiling/result/*.csv.
-Use --model yolo_onnx, vit_onnx, resnet50_onnx, or bert_onnx (model-repo2).
+Uses Triton gRPC client (tritonclient.grpc) for better throughput than HTTP.
 
 Usage:
-  # Port-forward first, then from repo root:
-  kubectl port-forward svc/triton-yolo 8000:8000   # or svc for model-repo2 (BERT), repo3 (ViT), repo4 (ResNet)
+  # Port-forward gRPC (Triton gRPC is typically on 8001), then from repo root:
+  kubectl port-forward svc/triton-yolo 8001:8001   # or svc for model-repo2 (BERT), repo3 (ViT), repo4 (ResNet)
   uv run python profiling/throughput.py
   uv run python profiling/throughput.py --model bert_onnx --duration 60 --max-inflight 64
   uv run python profiling/throughput.py --model vit_onnx --duration 60 --max-inflight 64
@@ -21,8 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
-
-import requests
+import tritonclient.grpc as grpcclient
 
 # Batch sizes to test (1 to 16)
 BATCH_SIZES = list(range(1, 17))
@@ -39,8 +38,8 @@ MODEL_IO = {
 }
 
 
-def make_random_payload(model: str, batch_size: int) -> dict:
-    """Build inference payload (new data every call). Supports vision (FP32) and BERT (INT64) models."""
+def _build_grpc_inputs(model: str, batch_size: int) -> tuple[list, list]:
+    """Build gRPC InferInput and InferRequestedOutput (new data every call)."""
     cfg = MODEL_IO[model]
     if isinstance(cfg, dict) and cfg.get("kind") == "bert":
         seq_len = cfg["seq_len"]
@@ -49,43 +48,49 @@ def make_random_payload(model: str, batch_size: int) -> dict:
         input_ids = np.random.randint(0, 30000, size=shape, dtype=np.int64)
         attention_mask = np.ones(shape, dtype=np.int64)
         token_type_ids = np.zeros(shape, dtype=np.int64)
-        return {
-            "inputs": [
-                {"name": "input_ids", "shape": shape, "datatype": "INT64", "data": input_ids.flatten().tolist()},
-                {"name": "attention_mask", "shape": shape, "datatype": "INT64", "data": attention_mask.flatten().tolist()},
-                {"name": "token_type_ids", "shape": shape, "datatype": "INT64", "data": token_type_ids.flatten().tolist()},
-            ],
-            "outputs": [{"name": output_name}],
-        }
+        inputs = [
+            grpcclient.InferInput("input_ids", shape, "INT64"),
+            grpcclient.InferInput("attention_mask", shape, "INT64"),
+            grpcclient.InferInput("token_type_ids", shape, "INT64"),
+        ]
+        inputs[0].set_data_from_numpy(input_ids)
+        inputs[1].set_data_from_numpy(attention_mask)
+        inputs[2].set_data_from_numpy(token_type_ids)
+        outputs = [grpcclient.InferRequestedOutput(output_name)]
+        return inputs, outputs
     # Vision
     input_name, output_name, (c, h, w) = cfg
     shape = [batch_size, c, h, w]
     data = np.random.randn(*shape).astype(np.float32)
-    return {
-        "inputs": [
-            {"name": input_name, "shape": shape, "datatype": "FP32", "data": data.flatten().tolist()},
-        ],
-        "outputs": [{"name": output_name}],
-    }
+    inputs = [grpcclient.InferInput(input_name, shape, "FP32")]
+    inputs[0].set_data_from_numpy(data)
+    outputs = [grpcclient.InferRequestedOutput(output_name)]
+    return inputs, outputs
 
 
-def do_one_request(infer_url: str, payload: dict, timeout: int = 120) -> bool:
-    """Send one inference request. Returns True on success."""
-    try:
-        r = requests.post(infer_url, json=payload, timeout=timeout)
-        r.raise_for_status()
-        return True
-    except requests.RequestException:
-        return False
+def _parse_grpc_url(url: str) -> str:
+    """Return host:port for gRPC. If url is http(s)://host:8000, use port 8001 (Triton gRPC)."""
+    s = url.strip().rstrip("/")
+    if s.startswith("http://"):
+        s = s[7:]
+    elif s.startswith("https://"):
+        s = s[8:]
+    if ":" in s:
+        host, port = s.rsplit(":", 1)
+        if port == "8000":
+            return f"{host}:8001"
+        return f"{host}:{port}"
+    return f"{s}:8001"
 
 
 def run_saturation_test(
-    base_url: str,
+    grpc_url: str,
     model: str,
     batch_size: int,
     duration_sec: float,
     num_workers: int,
     max_inflight_images: int,
+    client_timeout: int = 120,
 ) -> tuple[int, float, float]:
     """
     Run for duration_sec with num_workers threads. Limits in-flight images to
@@ -94,33 +99,41 @@ def run_saturation_test(
     """
     if model not in MODEL_IO:
         raise ValueError(f"Unknown model {model!r}; supported: {list(MODEL_IO)}")
-    infer_url = f"{base_url}/v2/models/{model}/infer"
 
     completions: list[tuple[float, int]] = []
     lock = threading.Lock()
     deadline = [0.0]
     sem = threading.Semaphore(max_inflight_images)
 
-    def worker() -> None:
+    def worker(client: grpcclient.InferenceServerClient) -> None:
         while time.perf_counter() < deadline[0]:
             for _ in range(batch_size):
                 sem.acquire()
             try:
-                payload = make_random_payload(model, batch_size)
-                if do_one_request(infer_url, payload):
+                inputs, outputs = _build_grpc_inputs(model, batch_size)
+                try:
+                    client.infer(
+                        model_name=model,
+                        inputs=inputs,
+                        outputs=outputs,
+                        client_timeout=client_timeout,
+                    )
                     finish = time.perf_counter()
                     with lock:
                         completions.append((finish, batch_size))
+                except Exception:
+                    pass
             finally:
                 for _ in range(batch_size):
                     sem.release()
 
     start = time.perf_counter()
     deadline[0] = start + duration_sec
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(worker) for _ in range(num_workers)]
-        for f in as_completed(futures):
-            f.result()
+    with grpcclient.InferenceServerClient(url=grpc_url) as client:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(worker, client) for _ in range(num_workers)]
+            for f in as_completed(futures):
+                f.result()
 
     cutoff = start + duration_sec
     images_in_window = sum(bs for (ts, bs) in completions if ts <= cutoff)
@@ -132,8 +145,8 @@ def main():
     parser = argparse.ArgumentParser(description="Triton throughput benchmark (batch 1-16, saturation; supports yolo_onnx, vit_onnx, resnet50_onnx, bert_onnx)")
     parser.add_argument(
         "--url",
-        default="http://localhost:8000",
-        help="Triton HTTP endpoint (default: http://localhost:8000)",
+        default="localhost:8001",
+        help="Triton gRPC endpoint host:port (default: localhost:8001). If you pass http://host:8000, port 8001 is used.",
     )
     parser.add_argument(
         "--model",
@@ -174,16 +187,16 @@ def main():
     if args.seed is not None:
         np.random.seed(args.seed)
 
-    base = args.url.rstrip("/")
+    grpc_url = _parse_grpc_url(args.url)
     out_path = Path(args.output) if args.output else RESULT_DIR / f"{args.model}_throughput.csv"
 
     try:
-        r = requests.get(f"{base}/v2/health/ready", timeout=5)
-        if r.status_code != 200:
-            print(f"Server not ready: {r.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except requests.RequestException as e:
-        print(f"Cannot reach Triton at {base}: {e}", file=sys.stderr)
+        with grpcclient.InferenceServerClient(url=grpc_url) as client:
+            if not client.is_server_ready():
+                print("Server not ready", file=sys.stderr)
+                sys.exit(1)
+    except Exception as e:
+        print(f"Cannot reach Triton at {grpc_url}: {e}", file=sys.stderr)
         sys.exit(1)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,7 +214,7 @@ def main():
             time.sleep(5)
         try:
             images_in_window, window_sec, throughput = run_saturation_test(
-                base,
+                grpc_url,
                 args.model,
                 batch_size,
                 args.duration,
@@ -210,7 +223,7 @@ def main():
             )
             results.append((batch_size, images_in_window, window_sec, throughput))
             print(f"{batch_size:<12} {images_in_window:<10} {window_sec:<12.2f} {throughput:<20.2f}")
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"batch_size={batch_size} FAILED: {e}", file=sys.stderr)
             sys.exit(1)
 

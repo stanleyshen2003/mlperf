@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package scheduler;
+
+// A single inference request sent from the load generator to the scheduler.
+message InferRequest {
+  // Priority tier: 1 = VIP, 2 = Premium, 3 = Free
+  int32 tier = 1;
+
+  // Absolute deadline as Unix timestamp in nanoseconds (Unix epoch).
+  // e.g. 1740888024000000000 == 2026-03-02 18:20:24 UTC
+  // Computed as: time.time_ns() + slo_latency_ns at the moment of dispatch.
+  // The scheduler compares this against time.time_ns() to check expiry.
+  int64 deadline_ns = 2;
+
+  // Model to run: "resnet50" or "vit"
+  string model_name = 3;
+
+  // Flattened float32 input tensor.
+  // resnet50: shape [1, 3, 224, 224] → 150528 floats
+  // vit:      shape [1, 3, 224, 224] → 150528 floats
+  repeated float input_tensor = 4;
+
+  // Shape of the input tensor (e.g. [1, 3, 224, 224])
+  repeated int32 input_shape = 5;
+}
+
+// Response from the scheduler after inference completes.
+message InferResponse {
+  // Echo back the request's deadline_ns so the client can compute latency.
+  int64 deadline_ns = 1;
+
+  // Whether the request was processed successfully.
+  bool success = 2;
+
+  // Optional: human-readable status or error message.
+  string message = 3;
+}
+
+service SchedulerService {
+  // Submit one inference request to the scheduler.
+  rpc Infer(InferRequest) returns (InferResponse);
+}

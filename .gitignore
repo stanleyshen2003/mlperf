@@ -17,3 +17,6 @@ serving/.download/
 *.safetensors
 *.ckpt
 *.pb
+*.onnx.data
+result/loadgen_logs/
+result/*.csv
